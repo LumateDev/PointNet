@@ -8,6 +8,7 @@ checkpoints/
 checkpoints — копия/
 datasets/
 runs/
+cache/
 __pycache__
 
 predicted_dgcnn_with_comparison.las
