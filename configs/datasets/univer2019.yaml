@@ -1,0 +1,55 @@
+# Конфигурация для Univer2019.las
+name: "Univer 2019 Dataset"
+description: "University LiDAR Dataset 2019"
+
+# Исходные классы в LAS файле
+original_classes:
+  1: "Unclassified"
+  2: "Ground"
+  3: "Low Vegetation"
+  4: "Medium Vegetation"
+  5: "High Vegetation"
+  6: "Building"
+  7: "Low Point (noise)"
+  8: "Model Key-point"
+
+# Стандартизированные категории (4 класса)
+# Объединяем похожие классы
+class_mapping:
+  1: 0  # Unclassified -> Other
+  2: 1  # Ground -> Ground
+  3: 2  # Low Vegetation -> Vegetation
+  4: 2  # Medium Vegetation -> Vegetation
+  5: 2  # High Vegetation -> Vegetation
+  6: 3  # Building -> Building
+  7: 0  # Low Point -> Other
+  8: 0  # Model Key-point -> Other
+
+# Названия стандартизированных классов
+standard_classes:
+  0: "Other"
+  1: "Ground"
+  2: "Vegetation"
+  3: "Building"
+
+# Цвета для визуализации (RGB)
+class_colors:
+  0: [128, 128, 128]  # Серый - Other
+  1: [139, 69, 19]     # Коричневый - Ground
+  2: [34, 139, 34]     # Зеленый - Vegetation
+  3: [255, 0, 0]       # Красный - Building
+
+# Обратный маппинг для сохранения (используем наиболее частый)
+reverse_mapping:
+  0: 1  # Other -> Unclassified
+  1: 2  # Ground -> Ground
+  2: 5  # Vegetation -> High Vegetation
+  3: 6  # Building -> Building
+
+# Параметры обработки
+num_classes: 4
+use_features: true
+feature_list:
+  - intensity
+  - return_number
+  - number_of_returns

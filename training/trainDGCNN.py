@@ -39,6 +39,7 @@ def get_config():
     config = {
         # ========== ДАННЫЕ ==========
         'las_file': 'datasets/raw/NEONDSSampleLiDARPointCloud.las',
+        'dataset_config': 'configs/datasets/neon_sample.yaml',
         'num_points': 4096,
         'block_size': 50.0,
         'stride': 25.0,
@@ -215,6 +216,38 @@ class DGCNNTrainer:
         if not os.path.exists(self.config['las_file']):
             raise FileNotFoundError(f"LAS file not found: {self.config['las_file']}")
         
+        # ЗАГРУЗКА КОНФИГУРАЦИИ ДАТАСЕТА
+        from utils.dataset_config import DatasetConfig, auto_detect_config
+        
+        dataset_config_path = self.config.get('dataset_config', None)
+        
+        if dataset_config_path and os.path.exists(dataset_config_path):
+            # Загрузка из явно указанного файла
+            dataset_config = DatasetConfig(dataset_config_path)
+            print(f"📋 Загружена конфигурация: {dataset_config_path}")
+        else:
+            # Автоопределение по имени файла
+            dataset_config = auto_detect_config(self.config['las_file'])
+            
+            if dataset_config is None:
+                # Fallback: используем NEON по умолчанию
+                print("⚠️  Конфигурация не найдена, используется NEON по умолчанию")
+                neon_config = Path('configs/datasets/neon_sample.yaml')
+                if neon_config.exists():
+                    dataset_config = DatasetConfig(neon_config)
+                else:
+                    raise FileNotFoundError(
+                        "Dataset config not found! Create configs/datasets/neon_sample.yaml"
+                    )
+        
+        # Вывод информации о конфигурации
+        dataset_config.print_info()
+        
+        # Обновляем num_classes из конфигурации датасета
+        self.config['num_classes'] = dataset_config.num_classes
+        self.train_metrics = SegmentationMetrics(num_classes=dataset_config.num_classes)
+        self.val_metrics = SegmentationMetrics(num_classes=dataset_config.num_classes)
+        
         # Создание полного датасета
         full_dataset = LASDataset(
             las_file=self.config['las_file'],
@@ -223,7 +256,8 @@ class DGCNNTrainer:
             stride=self.config['stride'],
             use_features=self.config['use_features'],
             normalize=self.config['normalize'],
-            augment=False  # Аугментации включим отдельно для train
+            augment=False,
+            dataset_config=dataset_config  # 🆕 ПЕРЕДАЕМ КОНФИГУРАЦИЮ
         )
         
         # Train/Val split
@@ -276,10 +310,15 @@ class DGCNNTrainer:
             )
             print(f"\n   Веса классов ({self.config['weight_mode']} mode):")
             for i, w in enumerate(self.class_weights):
-                print(f"   Класс {i}: {w:.4f}")
+                class_name = dataset_config.get_class_name(i)
+                print(f"   Класс {i} ({class_name}): {w:.4f}")
         else:
             self.class_weights = None
-    
+        
+        # Сохраняем конфигурацию датасета для использования в других местах
+        self.dataset_config = dataset_config    
+
+
     def _setup_model(self):
         """Создание модели и loss"""
         print("\n" + "="*80)
@@ -599,12 +638,14 @@ class DGCNNTrainer:
             print(f"   📉 VAL   | Loss: {val_loss:.4f} | Acc: {val_metrics['overall_acc']:6.2f}% | mIoU: {val_metrics['mean_iou']:6.2f}%")
             
             # Per-class метрики
+
             print(f"\n   🎯 Per-Class Metrics (Validation):")
-            class_names = ['Class 0', 'Class 1', 'Class 2', 'Class 3']
             for i in range(self.config['num_classes']):
                 acc = val_metrics['class_acc'][i]
                 iou = val_metrics['iou_per_class'][i]
-                print(f"      {class_names[i]}: Acc={acc:6.2f}% | IoU={iou:6.2f}%")
+                # 🆕 Используем названия из конфигурации датасета
+                class_name = self.dataset_config.get_class_name(i)
+                print(f"      {class_name}: Acc={acc:6.2f}% | IoU={iou:6.2f}%")
             
             # Сохранение истории
             self.history['train_loss'].append(train_loss)
@@ -692,6 +733,7 @@ def main():
     # Парсинг аргументов (опционально)
     parser = argparse.ArgumentParser(description='Train DGCNN for LiDAR Segmentation')
     parser.add_argument('--las_file', type=str, default=None, help='Path to LAS file')
+    parser.add_argument('--dataset_config', type=str, default=None, help='Path to dataset config YAML')
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size')
     parser.add_argument('--epochs', type=int, default=None, help='Number of epochs')
     parser.add_argument('--lr', type=float, default=None, help='Learning rate')
@@ -700,9 +742,11 @@ def main():
     # Конфигурация
     config = get_config()
     
-    # Переопределение из аргументов
+     # Переопределение из аргументов
     if args.las_file is not None:
         config['las_file'] = args.las_file
+    if args.dataset_config is not None:
+        config['dataset_config'] = args.dataset_config
     if args.batch_size is not None:
         config['batch_size'] = args.batch_size
     if args.epochs is not None:

@@ -1,7 +1,7 @@
 """
 utils/dataset.py
 Датасет для загрузки и обработки LiDAR данных из LAS файлов
-Совместимость с laspy 2.x
+Совместимость с laspy 2.x и поддержка конфигураций датасетов
 """
 
 import numpy as np
@@ -29,7 +29,8 @@ class LASDataset(Dataset):
         use_features=True,
         normalize=True,
         augment=False,
-        cache_dir='cache'
+        cache_dir='cache',
+        dataset_config=None 
     ):
         """
         Args:
@@ -41,6 +42,7 @@ class LASDataset(Dataset):
             normalize: нормализовать ли признаки
             augment: применять ли аугментации
             cache_dir: папка для кэширования
+            dataset_config: DatasetConfig объект или путь к YAML файлу
         """
         self.las_file = las_file
         self.num_points = num_points
@@ -51,16 +53,50 @@ class LASDataset(Dataset):
         self.augment = augment
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
+
+        if dataset_config is None:
+            # Попытка автоопределения
+            try:
+                from utils.dataset_config import auto_detect_config
+                dataset_config = auto_detect_config(las_file)
+            except:
+                pass
+            
+            if dataset_config is None:
+                # Fallback: используем NEON конфигурацию
+                print("⚠️  Конфигурация не определена, используется NEON по умолчанию")
+                try:
+                    from utils.dataset_config import DatasetConfig
+                    dataset_config = DatasetConfig('configs/datasets/neon_sample.yaml')
+                except:
+                    # Если нет конфига, используем старый маппинг
+                    print("⚠️  Используется стандартный маппинг классов")
+                    dataset_config = None
         
-        # Маппинг классов: 1,2,5,6 -> 0,1,2,3
-        self.class_mapping = {1: 0, 2: 1, 5: 2, 6: 3}
-        self.num_classes = 4
+        elif isinstance(dataset_config, (str, Path)):
+            # Загрузка из файла
+            from utils.dataset_config import DatasetConfig
+            dataset_config = DatasetConfig(dataset_config)
+        
+        self.dataset_config = dataset_config
+        
+        # Маппинг классов
+        if dataset_config is not None:
+            self.class_mapping = dataset_config.class_mapping
+            self.num_classes = dataset_config.num_classes
+        else:
+            # Fallback на старый маппинг
+            self.class_mapping = {1: 0, 2: 1, 5: 2, 6: 3}
+            self.num_classes = 4
         
         print(f"\n📂 Загрузка LAS файла: {las_file}")
+        if dataset_config is not None:
+            print(f"📋 Конфигурация: {dataset_config.name}")
+        
         self._load_data()
         self._create_blocks()
         
-        print(f"✅ Датасет готов:")
+        print(f"\n✅ Датасет готов:")
         print(f"   • Блоков: {len(self.blocks)}")
         print(f"   • Точек в блоке: {self.num_points}")
         print(f"   • Размер блока: {self.block_size}m")
@@ -86,7 +122,6 @@ class LASDataset(Dataset):
         print(f"   📖 Чтение LAS файла...")
         las = laspy.read(self.las_file)
         
-        # ========== ИСПРАВЛЕНИЕ: Совместимость с laspy 2.x ==========
         # Координаты
         xyz = np.vstack([
             np.array(las.x, dtype=np.float32),
@@ -126,13 +161,15 @@ class LASDataset(Dataset):
         print(f"   • Всего точек: {len(xyz):,}")
         print(f"   • Классы: {np.unique(labels)}")
         print(f"   • Признаков: {len(features)}")
-        for key in features.keys():
-            print(f"     - {key}: min={features[key].min():.2f}, max={features[key].max():.2f}")
         
-        # Маппинг классов
-        labels_mapped = np.full_like(labels, -1)
-        for original, mapped in self.class_mapping.items():
-            labels_mapped[labels == original] = mapped
+        # 🆕 Маппинг классов через конфигурацию
+        if self.dataset_config is not None:
+            labels_mapped = self.dataset_config.map_labels(labels)
+        else:
+            # Старый маппинг
+            labels_mapped = np.full_like(labels, -1)
+            for original, mapped in self.class_mapping.items():
+                labels_mapped[labels == original] = mapped
         
         # Удаляем точки с неизвестными классами
         valid_mask = labels_mapped >= 0
@@ -149,7 +186,11 @@ class LASDataset(Dataset):
         total = len(labels_mapped)
         for label, count in zip(unique_labels, counts):
             percent = 100.0 * count / total
-            print(f"      Класс {label}: {count:,} точек ({percent:.2f}%)")
+            if self.dataset_config:
+                class_name = self.dataset_config.get_class_name(label)
+                print(f"      Класс {label} ({class_name}): {count:,} точек ({percent:.2f}%)")
+            else:
+                print(f"      Класс {label}: {count:,} точек ({percent:.2f}%)")
         
         # Нормализация координат (центрирование по минимуму)
         self.bounds = {
@@ -160,11 +201,6 @@ class LASDataset(Dataset):
             'y_max': xyz[:, 1].max(),
             'z_max': xyz[:, 2].max(),
         }
-        
-        print(f"\n   🌍 Диапазоны координат:")
-        print(f"      X: {self.bounds['x_min']:.2f} → {self.bounds['x_max']:.2f} (Δ={self.bounds['x_max']-self.bounds['x_min']:.2f}m)")
-        print(f"      Y: {self.bounds['y_min']:.2f} → {self.bounds['y_max']:.2f} (Δ={self.bounds['y_max']-self.bounds['y_min']:.2f}m)")
-        print(f"      Z: {self.bounds['z_min']:.2f} → {self.bounds['z_max']:.2f} (Δ={self.bounds['z_max']-self.bounds['z_min']:.2f}m)")
         
         xyz[:, 0] -= self.bounds['x_min']
         xyz[:, 1] -= self.bounds['y_min']
@@ -374,41 +410,10 @@ class LASDataset(Dataset):
         for cls, count in zip(unique, counts):
             percent = 100.0 * count / total
             distribution[int(cls)] = int(count)
-            print(f"   Класс {cls}: {count:,} точек ({percent:.2f}%)")
+            if self.dataset_config:
+                class_name = self.dataset_config.get_class_name(cls)
+                print(f"   Класс {cls} ({class_name}): {count:,} точек ({percent:.2f}%)")
+            else:
+                print(f"   Класс {cls}: {count:,} точек ({percent:.2f}%)")
         
         return distribution
-
-
-if __name__ == '__main__':
-    # Тестирование датасета
-    print("🧪 Тестирование LASDataset\n")
-    
-    las_file = 'datasets/raw/NEONDSSampleLiDARPointCloud.las'
-    
-    if not os.path.exists(las_file):
-        print(f"❌ Файл не найден: {las_file}")
-        exit(1)
-    
-    # Создание датасета
-    dataset = LASDataset(
-        las_file=las_file,
-        num_points=4096,
-        block_size=50.0,
-        stride=25.0,
-        use_features=True,
-        normalize=True,
-        augment=True
-    )
-    
-    # Тест загрузки
-    print("\n🧪 Тест загрузки блока:")
-    points, labels = dataset[0]
-    print(f"   Points shape: {points.shape}")
-    print(f"   Labels shape: {labels.shape}")
-    print(f"   Points range: [{points.min():.3f}, {points.max():.3f}]")
-    print(f"   Unique labels: {labels.unique().tolist()}")
-    
-    # Распределение классов
-    distribution = dataset.get_class_distribution()
-    
-    print("\n✅ Тест завершен!")

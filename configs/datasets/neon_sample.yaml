@@ -1,0 +1,48 @@
+# Конфигурация для NEONDSSampleLiDARPointCloud.las
+name: "NEON Sample Dataset"
+description: "NEON LiDAR Point Cloud Sample"
+
+# Исходные классы в LAS файле
+original_classes:
+  1: "Unclassified"
+  2: "Ground"
+  5: "High Vegetation"
+  6: "Building"
+
+# Стандартизированные категории (4 класса)
+# Маппинг: исходный_класс -> стандартная_категория
+class_mapping:
+  1: 0  # Unclassified -> Other
+  2: 1  # Ground -> Ground
+  5: 2  # High Vegetation -> Vegetation
+  6: 3  # Building -> Building
+
+# Названия стандартизированных классов
+standard_classes:
+  0: "Other"
+  1: "Ground"
+  2: "Vegetation"
+  3: "Building"
+
+# Цвета для визуализации (RGB)
+class_colors:
+  0: [128, 128, 128]  # Серый - Other
+  1: [139, 69, 19]     # Коричневый - Ground
+  2: [34, 139, 34]     # Зеленый - Vegetation
+  3: [255, 0, 0]       # Красный - Building
+
+# Обратный маппинг для сохранения LAS
+# стандартная_категория -> исходный_класс
+reverse_mapping:
+  0: 1
+  1: 2
+  2: 5
+  3: 6
+
+# Параметры обработки
+num_classes: 4
+use_features: true
+feature_list:
+  - intensity
+  - return_number
+  - number_of_returns

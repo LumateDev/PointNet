@@ -6,7 +6,10 @@ predicted.
 logs/
 checkpoints/
 checkpoints — копия/
-datasets/
+datasets/raw
+datasets/unlabeled
+datasets/predicted
+datasets/ply
 runs/
 cache/
 __pycache__
