@@ -14,11 +14,19 @@ from dataset import LASDataset
 def find_las_file():
     """Находит LAS файл в различных возможных местах"""
     possible_paths = [
+        'datasets/raw/NEONDSSampleLiDARPointCloud.las',
         'Univer2019.las',
         'datasets/raw/Univer2019.las',
         'datasets/unlabeled/Univer2019.las',
     ]
     
+    # Сначала проверяем конкретные пути
+    for path in possible_paths:
+        if os.path.exists(path):
+            print(f"✅ Найден LAS файл: {path}")
+            return path
+    
+    # Если конкретные пути не нашлись, ищем в папках
     folders_to_check = ['.', 'datasets/raw', 'datasets/unlabeled']
     
     for folder in folders_to_check:
@@ -320,7 +328,7 @@ def main():
         NUM_CLASSES = 8
         NUM_POINTS = 4096
         BATCH_SIZE = 4
-        EPOCHS = 5
+        EPOCHS = 10
         LEARNING_RATE = 0.001
         BLOCK_SIZE = 50.0
         STRIDE = 25.0

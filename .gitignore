@@ -1,7 +1,14 @@
 pointnet_env/
+.venv/
 Univer2019.las
 unlabeled.las
 predicted.
 logs/
 checkpoints/
+checkpoints — копия/
+datasets/
+runs/
 __pycache__
+
+predicted_dgcnn_with_comparison.las
+predicted_with_comparison.las
