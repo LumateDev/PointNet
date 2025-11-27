@@ -51,6 +51,8 @@ def main():
     new_las.y = las.y
     new_las.z = las.z
 
+    #tets comment
+
     # Копируем другие поля, кроме классификации
     for dim_name in las.point_format.dimension_names:
         if 'class' in dim_name.lower():
